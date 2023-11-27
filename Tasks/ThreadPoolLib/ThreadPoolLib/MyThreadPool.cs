@@ -17,9 +17,9 @@ public class MyThreadPool : IDisposable
     public MyThreadPool(uint numThreads)
     {
         cancellationToken = cancellationTokenSource.Token;
-        Array.Resize(ref pool, (int) numThreads);
         if (numThreads < 1) throw new ArgumentException("Number threads can't be lower than 1!");
         NumThreads = numThreads;
+        Array.Resize(ref pool, (int)numThreads);
         for (var i = 0; i < numThreads; i++)
         {
             Thread thread = new Thread(() => RunThreadWorker(cancellationToken));
@@ -33,26 +33,30 @@ public class MyThreadPool : IDisposable
         WaitHandle[] waitHandles = { cancellationToken.WaitHandle, taskWaitHandle };    
         while (!cancellationToken.IsCancellationRequested)
         {
+            WaitHandle.WaitAny(waitHandles);
+            Interlocked.Increment(ref numWaitingThreads);
             IMyRunnableTask? task = null;
             lock (queue)
             {
-                if (queue.Count > 0)
+                queue.TryDequeue(out task);
+                Interlocked.Decrement(ref numWaitingThreads);
+                /*
+                 * Нужно если taskWaitHandle.Set(); выполнится при добавлении
+                 * тасков несколько раз подряд, тем самым не разблокирует 
+                 * нужное кол-во потоков, и чтобы не будить потоков больше,
+                 * чем нам нужно, проверяется, что кол-во потоков, которые ждут
+                 * таску из очереди меньше кол-ва тасок в очереди.
+                 */
+                if (numWaitingThreads < queue.Count)
                 {
-                    task = queue.Dequeue();
+                    taskWaitHandle.Set();
                 }
             }
-            if (task == null)
+            if (task != null)
             {
-                Interlocked.Increment(ref numWaitingThreads);
-                WaitHandle.WaitAny(waitHandles);
-                Interlocked.Decrement(ref numWaitingThreads);
+                task.Run();    
             }
-            else
-            {
-                task.Run();
-            } 
         }
-
     }
 
     public IMyTask<TResult> Enqueue<TResult>(Func<TResult> task)
@@ -73,10 +77,7 @@ public class MyThreadPool : IDisposable
             lock (queue)
             {
                 queue.Enqueue(task);
-                if (numWaitingThreads > 0)
-                {
-                    taskWaitHandle.Set();
-                }
+                taskWaitHandle.Set();
             }
         }
     }
@@ -84,7 +85,7 @@ public class MyThreadPool : IDisposable
     public void Dispose()
     {   
         cancellationTokenSource.Cancel();
-        lock(queue)
+        lock (queue)
         {
             foreach (var task in queue)
             {
