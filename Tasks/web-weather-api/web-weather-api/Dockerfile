@@ -4,8 +4,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:7.0 AS base
 
 ENV LAT=59.93863
 ENV LNG=30.31413
-ENV StormGlassApiKey=API_KEY
-ENV OpenWeatherMapApiKey=API_KEY
+ENV StormGlassApiKey=API_KEY_STORM_GLASS
+ENV OpenWeatherMapApiKey=API_KEY_OPEN_WEATHER_MAP
 
 WORKDIR /app
 EXPOSE 80
